@@ -52,6 +52,7 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
+uint16_t ReadADC(uint8_t channel);
 
 /* USER CODE END PFP */
 
@@ -94,18 +95,80 @@ int main(void)
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
 
+  /* Precalculated constant values*/
+  //To get the total PWM period (timer ticks)
+  uint32_t timerPeriod = __HAL_TIM_GET_AUTORELOAD(&htim1) + 1;
+
+  //Define PWM pulse width limit (min and max) (timer ticks)
+  uint32_t minPwmTicks = (uint32_t)(timerPeriod * 0.05f);  //5% of period
+  uint32_t maxPwmTicks = (uint32_t)(timerPeriod * 0.10f);  //10% of period
+
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  //call my custom function for reading the ADC with channel 0
+	  uint16_t adcReading = ReadADC(0);
+
+	  //Calculate the Duty Cycle
+	  uint32_t pwmDutyCycle = minPwmTicks + (((maxPwmTicks - minPwmTicks) * adcReading) / 1023);
+
+	  //Set the value of a specific (CCR) within timer peripheral
+	  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, pwmDutyCycle);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 	  HAL_Delay(10);
   }
   /* USER CODE END 3 */
+}
+
+/**
+  * @brief Reads a 10-bit ADC value over SPI using 3-bytes
+  * @param channel: ADC channel to read (which in our case is always 0)
+  * @retval ADC value (0–1023)
+  */
+uint16_t ReadADC(uint8_t channel)
+{
+	//Transmit Array (Tx)
+    uint8_t spiTxData[3];
+
+    //Recieve Array (Rx)
+    uint8_t spiRxData[3];
+
+    //spiTxData[0] - Start bit (always 0x01)
+    //spiTxData[1]- Configuration byte:
+    //	Bit 7: 1 for single-ended mode
+    //  Bits 6-4: Channel selection (channel number shifted left by 4)
+    // spiTxData[2]: Dummy byte (0x00)
+    spiTxData[0] = 0x01;
+    spiTxData[1] = 0x80 | (channel << 4);
+    spiTxData[2] = 0x00;
+
+    //Pull the ADC chip-select low to begin the SPI communication
+    HAL_GPIO_WritePin(ADC_CS_GPIO_Port, ADC_CS_Pin, GPIO_PIN_RESET);
+
+    //Transmit and receive 3 bytes over SPI with full-duplex
+    if (HAL_SPI_TransmitReceive(&hspi1, spiTxData, spiRxData, 3, HAL_MAX_DELAY) != HAL_OK)
+    {
+        //Handles any errors
+        Error_Handler();
+    }
+
+    //Pull the chip-select high to end the SPI communication
+    HAL_GPIO_WritePin(ADC_CS_GPIO_Port, ADC_CS_Pin, GPIO_PIN_SET);
+
+    //Extract the 10-bit ADC result from the received bytes through the following logic
+    //	spiRxData[1]: The lower 2 bits contain the high bits of the result
+    //	spiRxData[2]: Contains the lower 8 bits of the result
+    uint16_t adcReading = ((spiRxData[1] & 0x03) << 8) | spiRxData[2];
+
+    return adcReading;
 }
 
 /**
