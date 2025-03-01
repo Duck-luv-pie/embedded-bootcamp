@@ -36,6 +36,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define ADC_CS_GPIO_Port GPIOB
+#define ADC_CS_Pin GPIO_PIN_8
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -95,13 +97,16 @@ int main(void)
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
 
-  /* Precalculated constant values*/
-  //To get the total PWM period (timer ticks)
-  uint32_t timerPeriod = __HAL_TIM_GET_AUTORELOAD(&htim1) + 1;
 
+
+
+  /* Precalculated constant values*/
   //Define PWM pulse width limit (min and max) (timer ticks)
-  uint32_t minPwmTicks = (uint32_t)(timerPeriod * 0.05f);  //5% of period
-  uint32_t maxPwmTicks = (uint32_t)(timerPeriod * 0.10f);  //10% of period
+  uint32_t minPwmTicks = (uint32_t)(64000 * 0.05f);  //5% of period
+  uint32_t maxPwmTicks = (uint32_t)(64000 * 0.10f);  //10% of period
+
+  HAL_GPIO_WritePin(ADC_CS_GPIO_Port, ADC_CS_Pin, GPIO_PIN_SET); //CS pin starts HIGH
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, minPwmTicks); //Initialize PWM, avoiding random intial movements
 
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
